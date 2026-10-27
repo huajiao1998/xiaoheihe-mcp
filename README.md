@@ -1,8 +1,8 @@
-# 小黑盒 MCP（我们的本体）
+# 小黑盒 MCP
 
-这是我们自己的小黑盒工具，**不是对别人包的补丁**。
+自用小黑盒mcp工具，
 
-代码就活在这个目录里，通过 editable 方式装进 uv tool 环境——site-packages 里只有
+通过 editable 方式装进 uv tool 环境——site-packages 里只有
 两个 `__editable__*.pth` 文件指向这里，没有代码副本。改这里的文件、重启 MCP 就生效。
 
 
