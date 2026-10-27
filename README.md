@@ -5,9 +5,6 @@
 代码就活在这个目录里，通过 editable 方式装进 uv tool 环境——site-packages 里只有
 两个 `__editable__*.pth` 文件指向这里，没有代码副本。改这里的文件、重启 MCP 就生效。
 
-最早参考过 [AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)（MIT），
-但**现在已经跟它相去甚远**——30 个工具、App 手机号登录、两套签名算法的纯 Python 实现、
-签到、私信，都是后来自己写出来的。它不是「改了几处的那个包」，是我们的东西。
 
 ---
 
