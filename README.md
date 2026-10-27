@@ -1,316 +1,262 @@
 # 小黑盒 MCP
 
-自用小黑盒mcp工具，
+小黑盒（Heybox，原小黑盒游戏社区）的 MCP 服务器与命令行工具。提供 30 个 MCP 工具，覆盖浏览、发帖、评论、互动、私信、签到与账号管理，可以直接接入任何支持 MCP 的客户端。
 
-通过 editable 方式装进 uv tool 环境——site-packages 里只有
-两个 `__editable__*.pth` 文件指向这里，没有代码副本。改这里的文件、重启 MCP 就生效。
+同时提供一个独立的 CLI（`xiaoheihe-cli`），不依赖 MCP 也能用。
 
+## 特性
 
----
+- **完整的社区操作**：首页推荐、搜索、帖子详情（含楼层与楼中楼）、发图文帖、发长文、发视频、评论、回复、点赞
+- **私信收发**：通过 App 通道实现，需要独立的 App 登录
+- **签到**：每日签到与状态查询
+- **评论定位**：回复评论时可按正文定位，无需提前查 ID
+- **MCP 与 CLI 双形态**：MCP 供 AI 客户端调用，CLI 供脚本和人工使用
+- **纯 Python 依赖**：除设备指纹计算需要 Node.js 外，全部逻辑为 Python 实现
 
-## 跟「打补丁」的区别
-
-| | 以前 | 现在 |
-|---|---|---|
-| 代码在哪 | uv tool 的 site-packages 里 | **本目录** |
-| site-packages 里有什么 | 一份改过的代码副本 | 只有两个 `.pth` 指针 |
-| 改完怎么生效 | 改 site-packages + 重启 | 改本目录 + 重启 |
-| 重装工具会怎样 | **改动全丢**，得跑 restore.sh | 跑 `install.sh` 重装即可，代码一直在 |
-| 升级原包 | 会覆盖 | 不升级了，这是我们自己的分支 |
-
----
-
-## 能干什么
-
-30 个 MCP 工具 + 一套命令行。下面按用途排，括号里是工具名。
-
-### 看
-
-| 功能 | 工具 / 命令 |
-|---|---|
-| 首页推荐流 | `get_home_content` |
-| 搜索帖子 / 用户 / 话题 / 游戏 | `search_content`（**搜用户要用数字 ID，昵称搜不到**） |
-| 帖子详情（正文 + 楼层 + 楼中楼） | `get_post_detail` |
-| 某人主页的帖子列表 | `user_posts` |
-| 自己的主页和动态 | `get_user_profile` |
-| 视频 / 图文帖的正文图片下载 | `get_post_detail(downloadImages=true)` |
-
-**回复评论怎么定位**（`reply_comment` 的 `targetCommentContent`）：
-
-优先给 `replyId` + `rootId`；只给正文时按**先精确、再包含**两轮找。包含匹配只在唯一命中才用，
-多命中会报错（不乱回错人）。所以**消息中心里那条截断过的正文可以直接拿来用**——
-`list_messages` 给的正文末尾带「…」，以前必须先去 `get_post_detail` 抄一遍完整原文，现在不用了。
-
-**搜索的两个坑**（2026-10-27 老板实测）：
-
-- **搜用户必须用数字 ID**，昵称搜不到。平台页面原话「目前仅支持搜索发布投稿作者、用户数字ID」——
-  搜「花椒木的小鱼」出来一堆同名的别人，搜「105803258」才是我。想找某人发过什么，直接
-  `user_posts(userId=...)` 更准。
-- **搜帖子是按标题/正文关键词匹配，不含作者名**；而且索引不全，有些新帖搜不到（平台侧问题，
-  同一篇用完整标题搜也没有，换个词反而能出来）。
-
-### 发
-
-| 功能 | 工具 / 命令 |
-|---|---|
-| **发图文帖** | `publish_content`（`mode=preview` 先看效果） |
-| **发长文**（Markdown / HTML / 本地图片） | `publish_article` |
-| 发视频 + 封面 | `publish_video` |
-| **发评论** | `post_comment` |
-| **回复评论**（按正文定位或 reply_id） | `reply_comment` |
-| **批量回复**（一次最多 12 条，自动排队限流） | `reply_many` |
-| 表情代码列表（`[cube_xx]`） | `list_emoticons` |
-
-发帖类都是 `mode=preview`（默认，只预览）→ `draft`（存草稿）→ `publish`（真发），
-`communities` 是分区名（如 `["AI"]`），不是话题标签。
-
-### 互动
-
-| 功能 | 工具 / 命令 |
-|---|---|
-| **关注** | `follow_user` |
-| **取关** | `unfollow_user` |
-| 我关注了谁 | `list_following` |
-| 谁关注了我 | `list_followers` |
-
-### 私信（App 通道）
-
-| 功能 | 工具 / 命令 |
-|---|---|
-| **读和某人的私信** | `list_private_messages` |
-| **发私信** | `send_private_message` |
-
-### 通知
-
-| 功能 | 工具 / 命令 |
-|---|---|
-| **评论和回复**（谁回了、说了什么、回的是我哪句） | `list_messages(kind="reply")` |
-| **赞** | `list_messages(kind="award")` |
-| 官方通知 / 好友申请 / 私信提醒 | `list_messages(kind="official")` |
-| 官方系统通知（登录安全等） | `list_notifications` |
-
-### 账号
-
-| 功能 | 工具 / 命令 |
-|---|---|
-| 登录状态 | `check_login_status` |
-| 扫码登录 / 打开官方网页登录 | `interactive_login`、`get_login_qr_code`、`xiaoheihe-cli login` |
-| **App 手机号登录**（私信用） | `xiaoheihe-cli app-login` |
-| 我的游戏记录 | `get_personal_games` |
-| 我的评分和短评（增删改查） | `list_personal_reviews` / `get_personal_review` / `create_personal_review` / `edit_personal_review` / `delete_personal_review` |
-| 本地图片缓存清理 | `clean_cache` |
-
-### 签到
-
-```bash
-xiaoheihe-cli sign --status   # 只看今天签没签
-xiaoheihe-cli sign            # 签到
-```
-
-**接口分工**（`/task/` 这组内部并不统一，很容易搞混）：
-
-| 干什么 | 接口 | 用哪套签名 + 凭据 |
-|---|---|---|
-| 查今天签没签 | `/task/list_v2/` | **网页签名 + 网页 cookie** |
-| 执行签到 | `/task/sign_v3/sign` | **native 签名 + App 凭据** |
-
-**踩过的坑**：`/task/sign_v4/get_sign_state` 名字像查状态，但今天已签过之后再调会回
-「非法请求」——看着像签名坏了，其实只是重复签到被拒。别拿它当状态查询用，
-查状态一律走 `/task/list_v2/` 看「每日任务」里签到项的 `state == "finish"`。
-
-**现状**：查状态已打通（`sign --status` 能正确显示「今天已签到 ✅」）。
-签到写入用 native 签名（含魔改 SHA-512 算的 `_rnd`，跟原版 JS 逐字节对拍一致），
-当前登录态调 `/task/sign_v3/sign` 回「非法请求」，待自然日刷新后验证。
-
-
----
-
-## 凭据与登录（先看这个）
-
-**两条腿走路，别混：**
-
-| 干什么 | 用什么凭据 | 登录方式 |
-|---|---|---|
-| 发帖 / 评论 / 关注 / 看内容 | **网页 cookie**（`~/.config/xiaoheihe-cli/session.json`） | `xiaoheihe-cli login`（扫码） |
-| **私信**收发、签到 | **App 凭据**（`~/.config/xiaoheihe-cli/app-session.json`） | `xiaoheihe-cli app-login`（手机号+验证码） |
-
-**为什么不能统一**（2026-10-27 实测）：App 凭据能过 `/bbs/app/` 的**读**接口
-（`/bbs/app/feeds` 返回正常），但**写接口一律回「请登录后使用该功能」**——
-发评论、发帖、关注只认网页会话。反过来，网页 cookie 走不了 `/chat/` 和 `/task/`。
-
-所以：**想私信就 `app-login` 登录一次，别的照旧用网页令牌，不用管。**
-
-两套是独立的，登录一边不会顶掉另一边（实测过）。
-
-### App 登录怎么用
-
-```bash
-xiaoheihe-cli app-login --phone 180xxxxxxxx   # 发码，状态自动存盘（5 分钟内有效）
-xiaoheihe-cli app-login --code 1234           # 提交，拿 pkey 写 app-session.json
-xiaoheihe-cli app-login                       # 交互式一次走完
-```
-
-**分两次跑也行**：发码时会把设备令牌和 device_id 存进 `app-login-pending.json`，
-提交时复用同一套。不这么做的话，每次调用都重新生成令牌，提交必失败。
-
-### 为什么不干脆全用 App 凭据
-
-试过，写接口不认。除非哪天找到 App 端写操作的正确姿势，否则这条分工不变。
-
----
-
-## 装 / 重装
+## 安装
 
 ```bash
 bash install.sh
 ```
 
-什么时候需要跑：
+脚本会完成以下步骤：
 
-- 换机器、重装系统
-- 手滑 `uv tool uninstall xiaoheihe-cli` 或删了 uv tool 环境
-- uv 大版本升级把 tool 环境重建了
-- `xiaoheihe-cli` 命令不见了
+1. 以 editable 模式将本包安装到 `uv tool` 环境
+2. 验证 `xiaoheihe-cli` 命令可用
+3. 断言模块加载路径指向本项目目录，防止误装成 PyPI 上的同名包
+4. 检查关键工具是否已注册
+5. 重启 MCP 进程
 
-脚本会：editable 安装 → 验证命令能跑 → **断言加载路径指向本目录**（防止静默装成别的）
-→ 检查四个关注工具在不在 → 重启 MCP。
+需要重跑 `install.sh` 的情况：更换机器、重装系统、`uv tool` 环境被删除或重建、`xiaoheihe-cli` 命令丢失。
 
-**登录态不受影响**：存在 `~/.config/xiaoheihe-cli/session.json`，跟代码目录无关。
+登录态保存在 `~/.config/xiaoheihe-cli/`，与代码目录无关，重装不影响。
 
----
+### 依赖
 
-## 改了六处
+- Python 3.9+
+- Node.js（仅用于 App 登录时计算设备指纹，调用官方 `fp.min.js`）
 
-### 1. 评论读取：三处「读不完整就抛错」改成容忍
+## 快速开始
 
-`xhh_operator/comments.py`
+### 登录
 
-平台的 `child_num` 会把**已删除、已折叠**的回复也算进去，导致「楼中楼数量不足」的校验永远失败，
-一失败就 `raise ProtocolError`，整页 `read_thread` 全挂——按正文定位评论也跟着废。
+小黑盒有两套独立的凭据体系，用途不同，不能互相替代。
 
-改成打标记 `_incomplete = True` 跳过。同一类毛病共修三处：
-
-| 位置 | 原来 | 现在 |
+| 用途 | 凭据 | 登录方式 |
 |---|---|---|
-| 楼中楼数量对不上 | `raise ProtocolError` | `group["_incomplete"] = True` |
-| 空页却标 `has_more_floors` | `raise ProtocolError` | 停止翻页，保留已读到的 |
-| 跑到 `max_pages` 还没到底 | `raise ProtocolError` | 返回已有结果 |
+| 发帖、评论、关注、浏览 | 网页 cookie（`session.json`） | `xiaoheihe-cli login`（扫码） |
+| 私信收发、签到 | App 凭据（`app-session.json`） | `xiaoheihe-cli app-login`（手机号 + 验证码） |
 
-### 2. 评论读取：翻页重复楼层当死循环
+**网页登录**：
 
-`xhh_operator/comments.py`
+```bash
+xiaoheihe-cli login          # 扫码登录
+```
 
-平台翻页会**重复吐回已读楼层**（`offset` 按楼层数推进，但置顶/删除会让楼层号错位）。
-原版把这当死循环直接抛错。改成重复就 `continue` 跳过。
+**App 登录**（私信与签到需要）：
 
-> 这条是让我能按评论正文定位的前提，之前 `reply_comment` 用 `targetCommentContent` 一直在报错。
+```bash
+xiaoheihe-cli app-login                        # 交互式，一次走完
+xiaoheihe-cli app-login --phone 180xxxxxxxx    # 仅发验证码
+xiaoheihe-cli app-login --code 1234            # 仅提交验证码
+```
 
-### 3. 报错透出上游真实原因
+分两步执行时，发码阶段会把设备令牌与 `device_id` 写入 `app-login-pending.json`，提交阶段复用同一套。若每次调用都重新生成设备令牌，提交必然失败——这是 App 登录最容易踩的坑。
 
-`xhh_operator/http.py`
+两套登录态相互独立，登录一边不会使另一边失效。
 
-原版把所有上游失败压成一句「小黑盒拒绝了操作，请检查账号权限、内容及接口兼容性」，
-**看不到真正的原因**。改成把上游 `msg` 带出来（超过 300 字截断）。
+注意：App 登录会将该账号在手机 App 上挤下线。
 
-> 这条价值很大：关注接口就是靠它吐出的「both following id and follower id is required」
-> 才挖到参数名的。原版那句话会把这个线索吞掉。
+### 为什么需要两套凭据
 
-### 4. 表情白名单
+实测结论：
 
-`xhh_operator/mcp_server.py`
+- App 凭据可以通过 `/bbs/app/` 下的**读**接口，但**写接口一律返回「请登录后使用该功能」**——发帖、评论、关注只认网页会话。
+- 网页 cookie 无法访问 `/chat/`（私信）和 `/task/`（签到）两组接口。
 
-正文里写 `[cube_狗头]` 这种中文别名，工具自动换成真实代码。
+因此两套凭据各司其职，无法统一。只想私信的话，额外执行一次 `app-login` 即可，其余操作不受影响。
 
-### 5. 报错文案：把「社区」和「话题标签」分清
+## 工具清单
 
-`xhh_operator/selections.py`
+以下 30 个 MCP 工具按用途分组，括号内为工具名。
 
-原版这句把两个概念混成一句话，报错时看不懂到底是哪个参数错了。
+### 浏览
 
-### 6. 新增：关注功能（四个 MCP 工具）
+| 功能 | 工具 |
+|---|---|
+| 首页推荐流 | `get_home_content` |
+| 搜索帖子 / 用户 / 话题 / 游戏 | `search_content` |
+| 帖子详情（正文 + 楼层 + 楼中楼） | `get_post_detail` |
+| 某用户的帖子列表 | `user_posts` |
+| 自己的主页与动态 | `get_user_profile` |
+| 下载帖子正文图片 | `get_post_detail(downloadImages=true)` |
 
-`xhh_operator/service.py` + `xhh_operator/mcp_server.py`
+搜索用户必须使用**数字 ID**，昵称无法搜到。平台明确说明「目前仅支持搜索发布投稿作者、用户数字ID」，搜索昵称会返回大量同名用户。要查看某人发过什么，直接用 `user_posts(userId=...)` 更准确。
 
-小黑盒网页端**没有「好友」接口，私信也发不出去**。关注是现有能力里唯一真能加人的。
+搜索帖子按标题与正文关键词匹配，不包含作者名。索引存在不完整的情况：部分新帖搜不到，同一篇帖子用完整标题搜不到、换关键词反而能命中，属于平台侧限制，App 与网页表现一致。
 
-| 工具 | 干什么 | 默认行为 |
+### 发布
+
+| 功能 | 工具 |
+|---|---|
+| 发图文帖 | `publish_content` |
+| 发长文（支持 Markdown / HTML / 本地图片） | `publish_article` |
+| 发视频与封面 | `publish_video` |
+| 发评论 | `post_comment` |
+| 回复评论 | `reply_comment` |
+| 批量回复（单次最多 12 条，自动排队限流） | `reply_many` |
+| 表情代码列表 | `list_emoticons` |
+
+发帖类工具均有三种模式：`preview`（默认，仅预览）、`draft`（存草稿）、`publish`（正式发布）。`communities` 参数传分区名（如 `["AI"]`），不是话题标签。
+
+正文中可直接书写 `[cube_狗头]` 这类中文别名，工具会自动转换为真实的表情代码。
+
+### 互动
+
+| 功能 | 工具 |
+|---|---|
+| 关注 | `follow_user` |
+| 取消关注 | `unfollow_user` |
+| 查看关注列表 | `list_following` |
+| 查看粉丝列表 | `list_followers` |
+
+写操作默认 `dry_run=true`，只做预检不实际执行，需显式传 `false` 才会发出。
+
+小黑盒网页端没有「好友」接口，关注是唯一能建立关系的方式。
+
+### 私信
+
+| 功能 | 工具 |
+|---|---|
+| 读取与某人的私信 | `list_private_messages` |
+| 发送私信 | `send_private_message` |
+
+私信走 App 通道，依赖 App 凭据。
+
+读取时，对方发来的消息在 `markdown` 字段，自己发出的在 `text` 字段。`is_user=1` 表示自己发送，但系统提示消息（如「我们已经是好友啦」）同样为 1，需根据文案判断。
+
+### 通知
+
+| 功能 | 工具 |
+|---|---|
+| 评论与回复（含被回复的原文） | `list_messages(kind="reply")` |
+| 收到的赞 | `list_messages(kind="award")` |
+| 官方通知 / 好友申请 / 私信提醒 | `list_messages(kind="official")` |
+| 官方系统通知 | `list_notifications` |
+
+### 账号
+
+| 功能 | 工具 |
+|---|---|
+| 查询登录状态 | `check_login_status` |
+| 扫码登录 | `interactive_login`、`get_login_qr_code` |
+| 我的游戏记录 | `get_personal_games` |
+| 我的评分与短评 | `list_personal_reviews`、`get_personal_review`、`create_personal_review`、`edit_personal_review`、`delete_personal_review` |
+| 清理本地图片缓存 | `clean_cache` |
+
+### 签到
+
+```bash
+xiaoheihe-cli sign --status   # 查询今日是否已签到
+xiaoheihe-cli sign            # 执行签到
+```
+
+签到相关的接口属于 `/task/` 组，但该组内部并不统一：
+
+| 操作 | 接口 | 签名与凭据 |
 |---|---|---|
-| `follow_user` | 关注某人（传对方 uid） | `dry_run=true` 只预检 |
-| `unfollow_user` | 取消关注 | 同上 |
-| `list_following` | 我关注了谁 / 某人关注了谁 | 只读 |
-| `list_followers` | 谁关注了我 / 某人的粉丝 | 只读 |
+| 查询签到状态 | `/task/list_v2/` | 网页签名 + 网页 cookie |
+| 执行签到 | `/task/sign_v3/sign` | native 签名 + App 凭据 |
 
-接口参数（踩过坑）：
+注意不要用 `/task/sign_v4/get_sign_state` 查询状态。该接口在当天已签到的情况下会返回「非法请求」，容易误判为签名失效，实际只是重复签到被拒绝。查询状态应使用 `/task/list_v2/`，读取「每日任务」中标题为「签到」的项，判断其 `state` 是否为 `finish`。
 
-- `POST /bbs/app/profile/follow/user`，取关 `POST /bbs/app/profile/follow/user/cancel`
-- **表单只发 `following_id`**（对方 uid），不要发 `follower_id`
-- 报错会直接说缺什么：「both following id and follower id is required」
+## 设计说明
 
-> 还有个坑：`http.request()` 返回的已经是 `result` 里的内容，字段在**顶层**。
-> 我一开始多取了一层 `data.get("result")`，导致列表永远是空，白折腾一晚上。
+### 两套签名算法
 
----
+小黑盒不同后端使用不同的签名方案，不可混用：
 
-## 目录
+| 实现 | 用于 | 特征 |
+|---|---|---|
+| `app_sign.py` 的 `hkeyencode` | 私信 `/chat/` | 7 位；HMAC-SHA1 变体 + GF(2^8) 运算 |
+| `app_sign_native.py` 的 `native_signature` | 登录、签到 `/account/` `/task/` | 8 位大写十六进制 + `_rnd`；HMAC-SHA512 + 自定义 CRC32 |
+
+native 签名中的 SHA-512 为修改版，与标准实现有三处差异：K 表后半段被替换、`Ch` 函数改为 `(x & (y ^ z)) ^ y`、`_rnd` 使用 CRC32 多项式 `0xAD350290`。实现已与官方 JS 逐字节比对一致。
+
+### 评论读取的容错
+
+平台返回的 `child_num` 会把已删除、已折叠的回复计算在内，导致楼中楼数量校验失败。原始实现遇到不一致时直接抛出异常，整页读取随之失败，按正文定位评论也无法工作。
+
+当前实现改为标记 `_incomplete` 后继续，同类情况共三处：
+
+| 情况 | 处理方式 |
+|---|---|
+| 楼中楼数量与 `child_num` 不符 | 标记 `_incomplete = True`，继续 |
+| 页面为空但标记 `has_more_floors` | 停止翻页，保留已读内容 |
+| 达到 `max_pages` 仍未到底 | 返回已有结果 |
+
+翻页时平台会重复返回已读楼层（`offset` 按楼层数推进，但置顶与删除会导致楼层号错位），遇到重复楼层直接跳过。
+
+### 评论定位
+
+`reply_comment` 的 `targetCommentContent` 支持两种方式：
+
+- 精确指定 `replyId` 与 `rootId`
+- 只给正文，工具按**先精确、再包含**的顺序匹配
+
+包含匹配仅在唯一命中时采用，多处命中会报错，不会误回。因此消息中心返回的截断正文（末尾带「…」）可以直接用于定位，无需先查询完整原文。
+
+### 私信实现要点
+
+私信接口能用，依赖四个要素同时成立，缺一不可：
+
+1. 请求参数采用 App 1.3.218 的格式（不是 1.3.398）
+2. 使用 App 端凭据（`app-login` 取得）
+3. 使用 App 的 native hkey 签名
+4. User-Agent 为 `ApiMaxJia`（不是 `Max-Android`）
+
+另外，参数名需照抄 C# 实现中的拼写：`divice_info`、`channal`——这两处确实是错误拼写，但服务端按此校验。
+
+接口路径在 `/chat/` 前缀下，而非 `/bbs/app/`。这一点容易误判：按 `/bbs/app/` 试会全部返回 404，只有前缀正确后才会开始返回参数校验错误。
+
+### 关注接口
+
+- 关注：`POST /bbs/app/profile/follow/user`
+- 取消关注：`POST /bbs/app/profile/follow/user/cancel`
+- 表单只需提交 `following_id`（对方 uid），不要提交 `follower_id`
+- 缺少必填参数时，服务端会明确返回「both following id and follower id is required」
+
+### 错误信息透出
+
+上游失败时，工具会透出平台返回的真实 `msg`（超过 300 字截断），而不是统一压缩成一句泛化的提示。这对调试至关重要——例如关注接口的必填参数就是通过错误信息发现的。
+
+`http.request()` 的返回值已经是 `result` 字段内的内容，字段位于**顶层**，无需再取一层 `result`。
+
+## 目录结构
 
 ```
 .
-├── install.sh           ← 装 / 重装
-├── pyproject.toml       包定义（版本 0.1.0+local.1，依赖内含 mcp）
-├── LICENSE              原包 MIT，版权 Li Fangyu
+├── install.sh           安装与重装脚本
+├── pyproject.toml       包定义
+├── LICENSE
 ├── README.md
-├── xhh_operator/        主包（20 个 py，改动都在这）
-├── xiaoheihe/
-├── *.py                 上游那些模块（api_client / browser_manager / cli / ...）
-└── .gitignore
+├── xhh_operator/        主包
+├── xiaoheihe/           上游模块
+└── app_sign.py          签名实现
 ```
 
-MCP 入口：`xiaoheihe-cli mcp`（命令在 `/root/.local/bin/`）。
+MCP 入口命令：`xiaoheihe-cli mcp`
 
----
+## License
 
-## 私信（曾经走不通，现在通了）
+MIT License。原始版权归 Li Fangyu。
 
-2026-10-27 夜攻下来了。关键四要素缺一不可：
+## 致谢
 
-1. **App 1.3.218 的参数格式**（不是 1.3.398）
-2. **App 端凭据**（`app-login` 拿的 pkey / x_xhh_tokenid / device_id）
-3. **App 的 native hkey**（`xhh_operator/app_sign.py` 的 `hkeyencode`）
-4. **UA 用 `ApiMaxJia`**（不是 `Max-Android`）
+本项目在实现过程中参考了以下项目，做法是取长补短：参考各自的接口与算法思路，独立实现，并对实测结果逐项校验。
 
-参数名照抄 C# 源码的拼写：**`divice_info`、`channal`**（就是这两个错的拼法）。
+- **[AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)**（MIT）：最早参考其网页端接口与命令行结构。当前版本已与其有较大差异——完整的工具集、App 手机号登录、两套签名算法、签到与私信均为后续独立实现。
+- **[chr233/Xiaoheihe_CSharp](https://github.com/chr233/Xiaoheihe_CSharp)**：`/chat/` 私信使用的 hkey 签名（7 位）参考其 C# 实现移植。私信功能得以打通，这一份是关键。
+- **[Cansiny0320/heybox-daily](https://github.com/Cansiny0320/heybox-daily)**：`/task/` 签到使用的 native 签名（8 位大写十六进制 + `_rnd`，含修改版 SHA-512）参考其实现。
 
-工具：`list_private_messages`（读）、`send_private_message`（发）。
-
-**读的时候注意**：对方发来的消息在 `markdown` 字段，自己发的在 `text` 字段；
-`is_user=1` 是「我发的」，但系统提示（「我们已经是好友啦」）也是 1，要靠文案认。
-
-### 两套签名别搞混
-
-| 文件 | 用在哪 | 特征 |
-|---|---|---|
-| `app_sign.py` 的 `hkeyencode` | 私信 `/chat/` | 7 位；HMAC-SHA1 变体 + GF(2^8) |
-| `app_sign_native.py` 的 `native_hkey` | 登录、签到 `/account/` `/task/` | 8 位大写十六进制；HMAC-SHA512 + 自定义 CRC32 |
-
-完整来龙去脉（含所有失败组合的对照表）在 mnemon 文档 `b4e9317d-ca0c-4da5-8571-d56bc42a7635`。
-
----
-
-MIT License · 原项目版权归 Li Fangyu
-
----
-
-## 来源与致谢
-
-这个工具不是从零写的。做法是**取长补短**——四处看别人怎么解，回来自己实现，接口和算法对着实测对拍。
-
-- **[AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)**（MIT）：最早参考它的网页端接口和命令行骨架。
-  到今天已经**相去甚远**——30 个工具、App 手机号登录、两套签名算法、签到、私信都是后来自行实现的，
-  它现在更像一个起点，而不是底座。
-- **[chr233/Xiaoheihe_CSharp](https://github.com/chr233/Xiaoheihe_CSharp)**：`/chat/` 私信那套 hkey 签名（7 位）
-  是照它的 C# 实现翻成 Python 的。私信能打通，靠的就是这一份。
-- **[Cansiny0320/heybox-daily](https://github.com/Cansiny0320/heybox-daily)**：`/task/` 签到用的 native 签名
-  （8 位大写十六进制 + `_rnd`，含魔改 SHA-512）参考了它的实现。
-
-三个项目各自的思路不一样，拼起来才凑齐小黑盒这套接口的全貌：
-网页端、私信通道、签到通道本来就是三个不同的后端。
+三个项目覆盖了小黑盒三个不同后端：网页端、私信通道、签到通道。各自思路不同，合起来才构成完整图景。
