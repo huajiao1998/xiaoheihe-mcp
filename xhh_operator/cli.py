@@ -91,6 +91,9 @@ def parser():
     applogin.add_argument("--code", help="验证码；不给就交互输入")
     applogin.add_argument("--send-only", action="store_true", help="只发验证码")
 
+    signin = sub.add_parser("sign", help="每日签到（App 凭据）")
+    signin.add_argument("--status", action="store_true", help="只看今天签没签")
+
     sub.add_parser("browsers", help="查看支持的浏览器和本机可用状态")
     doctor = sub.add_parser("doctor", help="本地诊断，默认不读取会话内容")
     doctor.add_argument("--verify-login", action="store_true", help="显式校验已保存的登录态")
@@ -254,6 +257,10 @@ async def run(args):
         if args.send_only:
             argv.append("--send-only")
         return app_login_main(argv)
+
+    if args.command == "sign":
+        from .signin import main as signin_main
+        return signin_main(["--status"] if args.status else [])
 
     if args.command == "browsers":
         from playwright.async_api import async_playwright

@@ -22,6 +22,82 @@
 
 ---
 
+## 能干什么
+
+30 个 MCP 工具 + 一套命令行。下面按用途排，括号里是工具名。
+
+### 看
+
+| 功能 | 工具 / 命令 |
+|---|---|
+| 首页推荐流 | `get_home_content` |
+| 搜索帖子 / 用户 / 话题 / 游戏 | `search_content` |
+| 帖子详情（正文 + 楼层 + 楼中楼） | `get_post_detail` |
+| 某人主页的帖子列表 | `user_posts` |
+| 自己的主页和动态 | `get_user_profile` |
+| 视频 / 图文帖的正文图片下载 | `get_post_detail(downloadImages=true)` |
+
+### 发
+
+| 功能 | 工具 / 命令 |
+|---|---|
+| **发图文帖** | `publish_content`（`mode=preview` 先看效果） |
+| **发长文**（Markdown / HTML / 本地图片） | `publish_article` |
+| 发视频 + 封面 | `publish_video` |
+| **发评论** | `post_comment` |
+| **回复评论**（按正文定位或 reply_id） | `reply_comment` |
+| **批量回复**（一次最多 12 条，自动排队限流） | `reply_many` |
+| 表情代码列表（`[cube_xx]`） | `list_emoticons` |
+
+发帖类都是 `mode=preview`（默认，只预览）→ `draft`（存草稿）→ `publish`（真发），
+`communities` 是分区名（如 `["AI"]`），不是话题标签。
+
+### 互动
+
+| 功能 | 工具 / 命令 |
+|---|---|
+| **关注** | `follow_user` |
+| **取关** | `unfollow_user` |
+| 我关注了谁 | `list_following` |
+| 谁关注了我 | `list_followers` |
+
+### 私信（App 通道）
+
+| 功能 | 工具 / 命令 |
+|---|---|
+| **读和某人的私信** | `list_private_messages` |
+| **发私信** | `send_private_message` |
+
+### 通知
+
+| 功能 | 工具 / 命令 |
+|---|---|
+| **评论和回复**（谁回了、说了什么、回的是我哪句） | `list_messages(kind="reply")` |
+| **赞** | `list_messages(kind="award")` |
+| 官方通知 / 好友申请 / 私信提醒 | `list_messages(kind="official")` |
+| 官方系统通知（登录安全等） | `list_notifications` |
+
+### 账号
+
+| 功能 | 工具 / 命令 |
+|---|---|
+| 登录状态 | `check_login_status` |
+| 扫码登录 / 打开官方网页登录 | `interactive_login`、`get_login_qr_code`、`xiaoheihe-cli login` |
+| **App 手机号登录**（私信用） | `xiaoheihe-cli app-login` |
+| 我的游戏记录 | `get_personal_games` |
+| 我的评分和短评（增删改查） | `list_personal_reviews` / `get_personal_review` / `create_personal_review` / `edit_personal_review` / `delete_personal_review` |
+| 本地图片缓存清理 | `clean_cache` |
+
+### 签到
+
+`xiaoheihe-cli sign`（`--status` 只看不签）。
+
+**现状**：签名算法已经完整实现并对拍一致（含魔改 SHA-512 算出的 `_rnd`），
+但当前账号调 `/task/sign_v4/get_sign_state` 回「非法请求」，连原版 JS 用同一套凭据也一样。
+待查——不是签名算错，可能是 `/task/` 后端对设备的额外校验。
+
+---
+
 ## 凭据与登录（先看这个）
 
 **两条腿走路，别混：**
