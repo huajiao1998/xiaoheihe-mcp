@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+# 算法出处留档，故意保留
+!vendor/encode.pyc
 *.egg-info/
 build/
 dist/
