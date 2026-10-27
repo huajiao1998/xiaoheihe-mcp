@@ -90,11 +90,26 @@
 
 ### 签到
 
-`xiaoheihe-cli sign`（`--status` 只看不签）。
+```bash
+xiaoheihe-cli sign --status   # 只看今天签没签
+xiaoheihe-cli sign            # 签到
+```
 
-**现状**：签名算法已经完整实现并对拍一致（含魔改 SHA-512 算出的 `_rnd`），
-但当前账号调 `/task/sign_v4/get_sign_state` 回「非法请求」，连原版 JS 用同一套凭据也一样。
-待查——不是签名算错，可能是 `/task/` 后端对设备的额外校验。
+**接口分工**（`/task/` 这组内部并不统一，很容易搞混）：
+
+| 干什么 | 接口 | 用哪套签名 + 凭据 |
+|---|---|---|
+| 查今天签没签 | `/task/list_v2/` | **网页签名 + 网页 cookie** |
+| 执行签到 | `/task/sign_v3/sign` | **native 签名 + App 凭据** |
+
+**踩过的坑**：`/task/sign_v4/get_sign_state` 名字像查状态，但今天已签过之后再调会回
+「非法请求」——看着像签名坏了，其实只是重复签到被拒。别拿它当状态查询用，
+查状态一律走 `/task/list_v2/` 看「每日任务」里签到项的 `state == "finish"`。
+
+**现状**：查状态已打通（`sign --status` 能正确显示「今天已签到 ✅」）。
+签到写入用 native 签名（含魔改 SHA-512 算的 `_rnd`，跟原版 JS 逐字节对拍一致），
+当前登录态调 `/task/sign_v3/sign` 回「非法请求」，待自然日刷新后验证。
+
 
 ---
 
