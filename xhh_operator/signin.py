@@ -46,7 +46,10 @@ def _call(path, session, timeout=25):
         "version": APP_VERSION, "build": APP_BUILD, "dw": "360",
         "channel": "heybox", "x_app": "heybox", "time_zone": "Asia/Shanghai",
     }
-    params.update(sign_params(path, ts, session["device_id"] + session["heybox_id"]))
+    # 签名用的 path 带尾部斜杠（heybox-daily 的 normalizePath），但请求 URL 不带。
+    # 两边一致的话服务端会回「非法请求」——签名对不上。
+    sign_path = "/" + "/".join(x for x in path.split("/") if x) + "/"
+    params.update(sign_params(sign_path, ts, session["device_id"] + session["heybox_id"]))
     url = API + path + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, method="GET")
     req.add_header("User-Agent", "Max-Android")
@@ -57,6 +60,26 @@ def _call(path, session, timeout=25):
         return json.loads(resp.read().decode())
 
 
+def _run_coro(coro):
+    """在当前环境里把一个协程跑完。
+
+    CLI 入口本身跑在 `asyncio.run(...)` 里（cli.py），所以这里不能直接再调
+    `asyncio.run`——会报 "cannot be called from a running event loop"。有运行中的
+    loop 就另开线程跑，没有就直接 run。
+    """
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 def query_state(_session=None):
     """查今天签没签。
 
@@ -64,14 +87,13 @@ def query_state(_session=None):
     踩过的坑：`/task/sign_v4/get_sign_state` 名字像查状态，实际今天已签过再调会回
     「非法请求」，看着像签名坏了，其实只是重复签到被拒。别再拿它当状态查询用。
     """
-    import asyncio
     from .service import Operator
 
     async def _run():
         async with Operator() as op:
             return await op.api.request("/task/list_v2/")
 
-    data = asyncio.run(_run())
+    data = _run_coro(_run())
     if str(data.get("status")) != "ok":
         raise RuntimeError(data.get("msg") or "查任务列表失败（网页登录态可能过期）")
     for group in (data.get("result") or {}).get("task_list") or []:
