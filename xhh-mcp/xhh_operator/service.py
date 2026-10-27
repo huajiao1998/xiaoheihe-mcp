@@ -1,12 +1,15 @@
 import asyncio
 import json
+import os
+import random
 import re
+import string
 import time
 from decimal import Decimal, InvalidOperation
 
 from .auth import verify
 from .errors import AuthError, OperatorError, ProtocolError
-from .http import HeyboxAPI
+from .http import API_BASE, HeyboxAPI
 from .session import SessionStore
 from .signing import workshop_params
 
@@ -247,7 +250,7 @@ class Operator:
     ):
         self.store = store or SessionStore()
         self.session = self.store.load()
-        self.api = api or HeyboxAPI((self.session or {}).get("cookies", []))
+        self.api = api or HeyboxAPI(_preferred_cookies(self.session))
         self._verified = False
         self._uploader = uploader
 
@@ -1500,3 +1503,165 @@ class Operator:
         if not lines and not cnt:
             out["说明"] = "接口返回空——可能没关注过人，也可能被限流了，过一会儿再查"
         return out
+
+    # ------------------------------------------------------------------
+    # [本地补丁 2026-10-27] 私信读取
+    # 读的接口网页 cookie 就能用；发的接口要 App 端登录态，暂时做不到。
+    # 接口与参数来自 chr233/Xiaoheihe_CSharp 的 ChatAPI.cs（C# 实现）。
+    # ------------------------------------------------------------------
+
+    async def private_messages(self, peer, *, limit=20):
+        """读和某个人的私信会话（只读，网页 cookie 可用）。"""
+        peer = identifier(peer)
+        data = await self.api.request("/chat/get_message_list/", params={"userid": peer})
+        # /chat/ 这组接口回的是完整响应（status/result），跟 /bbs/app/ 不一样
+        result = data.get("result") if isinstance(data.get("result"), dict) else data
+
+        who = result.get("recipient") or {}
+        name = who.get("username") or "?"
+        uid = who.get("userid") or peer
+        msgs = result.get("list") or []
+
+        lines = []
+        for m in msgs:
+            ts = m.get("create_time") or 0
+            try:
+                stamp = __import__("datetime").datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                stamp = "?"
+            body = str(m.get("markdown") or m.get("text") or "").replace("\n", " ").strip()
+            # is_user: 1 = 我发的，0 = 对方发的。
+            # 平台把「加好友 / 互关」这类提示也算成 1，靠文案认出来标成系统。
+            if any(h in body for h in ("已经是好友", "已互相关注", "开始聊天吧", "以上是打招呼")):
+                side = "系统"
+            else:
+                side = "我" if str(m.get("is_user")) == "1" else name
+            if len(body) > 100:
+                body = body[:100] + "…"
+            lines.append("%s｜%s｜%s" % (stamp, side, body))
+
+        if limit and len(lines) > limit:
+            lines = lines[-limit:]
+
+        return {
+            "对象": "%s（uid %s）" % (name, uid),
+            "条数": len(lines),
+            "对话": lines,
+            "说明": "走 App 凭据（app-session.json）。发新的用 send_private_message。",
+        }
+
+    # ------------------------------------------------------------------
+    # [本地补丁 2026-10-27] 私信发送（App 通道）
+    # 关键：必须是 App 1.3.218 那套参数 + App 凭据 + encode.pyc 的 hkey。
+    # 用 1.3.398 / native 签名 / Max-Android UA 都会失败。
+    # 参数拼写照抄 C# 源码：divice_info、channal（不是 device_info/channel）。
+    # ------------------------------------------------------------------
+
+    async def send_private_message(self, peer, text):
+        """给某人发私信（走 App 通道）。"""
+        peer = identifier(peer)
+        text = str(text or "").strip()
+        if not text:
+            raise OperatorError("私信内容不能为空。", "invalid_input", 2)
+
+        app = _load_app_session()
+        path = "/chat/send_message/"
+        ts = int(time.time())
+        nonce = _rand_alnum(32)
+        hkey = _app_hkey(path, ts, nonce)
+
+        params = {
+            "heybox_id": str(app["heybox_id"]),
+            "imei": str(app["device_id"]),
+            "divice_info": "P40",
+            "os_type": "Android",
+            "x_os_type": "Android",
+            "x_client_type": "mobile",
+            "os_version": "10",
+            "version": "1.3.218",
+            "x_app": "heybox",
+            "channal": "heybox_xiaomi",
+            "userid": peer,
+            "_time": str(ts),
+            "nonce": nonce,
+            "hkey": hkey,
+        }
+        headers = {
+            "User-Agent": ("Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/41.0.2272.118 Safari/537.36 ApiMaxJia/1.0"),
+            "Referer": "http://api.maxjia.com/",
+            "Cookie": "pkey=%s; x_xhh_tokenid=%s" % (app["pkey"], app["x_xhh_tokenid"]),
+        }
+        response = await self.api.client.post(
+            API_BASE + path, params=params,
+            data={"text": text, "img": ""}, headers=headers)
+        try:
+            payload = response.json()
+        except Exception:
+            raise OperatorError("私信接口返回的不是 JSON：%s" % response.text[:150],
+                                "send_failed", 4)
+        # /chat/ 回的是完整响应
+        result = payload.get("result") if isinstance(payload.get("result"), dict) else payload
+        if str(payload.get("status", "")) != "ok":
+            raise OperatorError("私信没发出去：%s" % (payload.get("msg") or "未知原因"),
+                                "send_failed", 4)
+        return {
+            "结果": "已发送",
+            "对象": peer,
+            "内容": text[:80] + ("…" if len(text) > 80 else ""),
+            "msg_id": result.get("msg_id") or payload.get("msg_id"),
+        }
+
+
+# ----------------------------------------------------------------------
+# [本地补丁 2026-10-27] App 通道辅助
+# ----------------------------------------------------------------------
+
+_APP_SESSION_PATH = os.path.expanduser("~/.config/xiaoheihe-cli/app-session.json")
+
+
+def _preferred_cookies(session):
+    """凭据优先级：App 登录态 > 网页 cookie。
+
+    App 凭据一套就能跑 /bbs/app/（网页签名）、/chat/（encode 签名）、
+    /account/ 与 /task/（native 签名），登录一次不用再回网页拿密钥。
+    设 XHH_FORCE_WEB_COOKIE=1 可以强制用网页 cookie 回退排查。
+    """
+    # 实测结论：App 凭据能过 /bbs/app/ 的**读**接口，但写接口（发评论/发帖/关注）
+    # 会回「请登录后使用该功能」，所以默认仍用网页 cookie。
+    # 想试 App 凭据读接口可以设 XHH_USE_APP_COOKIE=1。
+    if os.environ.get("XHH_USE_APP_COOKIE") != "1":
+        return (session or {}).get("cookies", [])
+    try:
+        app = _load_app_session()
+    except OperatorError:
+        return (session or {}).get("cookies", [])
+    return [
+        {"name": "pkey", "value": app["pkey"],
+         "domain": ".xiaoheihe.cn", "path": "/", "secure": True},
+        {"name": "x_xhh_tokenid", "value": app["x_xhh_tokenid"],
+         "domain": ".xiaoheihe.cn", "path": "/", "secure": True},
+    ]
+
+
+def _load_app_session():
+    """读 App 端登录态（手机号验证码登录后保存的那份）。"""
+    try:
+        with open(_APP_SESSION_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        raise OperatorError("没有 App 登录态，发不了私信。", "no_app_session", 3)
+    for key in ("heybox_id", "pkey", "x_xhh_tokenid", "device_id"):
+        if not data.get(key):
+            raise OperatorError("App 登录态缺 %s，需要重新登录。" % key, "bad_app_session", 3)
+    return data
+
+
+def _rand_alnum(n):
+    return "".join(random.choices(string.ascii_letters + string.digits, k=n))
+
+
+def _app_hkey(path, ts, nonce):
+    """算 App 通道的 hkey（纯 Python，见 app_sign.py）。"""
+    from .app_sign import hkeyencode
+    return hkeyencode(path, ts, nonce)

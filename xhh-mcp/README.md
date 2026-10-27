@@ -22,6 +22,40 @@
 
 ---
 
+## 凭据与登录（先看这个）
+
+**两条腿走路，别混：**
+
+| 干什么 | 用什么凭据 | 登录方式 |
+|---|---|---|
+| 发帖 / 评论 / 关注 / 看内容 | **网页 cookie**（`~/.config/xiaoheihe-cli/session.json`） | `xiaoheihe-cli login`（扫码） |
+| **私信**收发、签到 | **App 凭据**（`~/.config/xiaoheihe-cli/app-session.json`） | `xiaoheihe-cli app-login`（手机号+验证码） |
+
+**为什么不能统一**（2026-10-27 实测）：App 凭据能过 `/bbs/app/` 的**读**接口
+（`/bbs/app/feeds` 返回正常），但**写接口一律回「请登录后使用该功能」**——
+发评论、发帖、关注只认网页会话。反过来，网页 cookie 走不了 `/chat/` 和 `/task/`。
+
+所以：**想私信就 `app-login` 登录一次，别的照旧用网页令牌，不用管。**
+
+两套是独立的，登录一边不会顶掉另一边（实测过）。
+
+### App 登录怎么用
+
+```bash
+xiaoheihe-cli app-login --phone 180xxxxxxxx   # 发码，状态自动存盘（5 分钟内有效）
+xiaoheihe-cli app-login --code 1234           # 提交，拿 pkey 写 app-session.json
+xiaoheihe-cli app-login                       # 交互式一次走完
+```
+
+**分两次跑也行**：发码时会把设备令牌和 device_id 存进 `app-login-pending.json`，
+提交时复用同一套。不这么做的话，每次调用都重新生成令牌，提交必失败。
+
+### 为什么不干脆全用 App 凭据
+
+试过，写接口不认。除非哪天找到 App 端写操作的正确姿势，否则这条分工不变。
+
+---
+
 ## 装 / 重装
 
 ```bash
@@ -132,16 +166,30 @@ MCP 入口：`xiaoheihe-cli mcp`（命令在 `/root/.local/bin/`）。
 
 ---
 
-## 已知走不通的
+## 私信（曾经走不通，现在通了）
 
-**私信**。`/chat/send_message/` 接口存在（返回「参数错误」而非 404），但参数试了 16 组全错，
-公开代码里没有任何一份可参考：
+2026-10-27 夜攻下来了。关键四要素缺一不可：
 
-- `/chat/` 是**独立后端**，返回带 `"version":"1.0"`，跟 `/bbs/app/` 不是一套
-- 签名是对的——`hkey` 挪到请求头它立刻说「hkey 不能为空」，放回查询参数就变「参数错误」
-- App 端参数由 `libhbsecurity.so` 在 native 层生成，还套了虚拟机保护
+1. **App 1.3.218 的参数格式**（不是 1.3.398）
+2. **App 端凭据**（`app-login` 拿的 pkey / x_xhh_tokenid / device_id）
+3. **App 的 native hkey**（`xhh_operator/app_sign.py` 的 `hkeyencode`）
+4. **UA 用 `ApiMaxJia`**（不是 `Max-Android`）
 
-结论：网页 cookie 这条路到头了。全记录在项目的 `docs/小黑盒私信与好友-能做什么.md`。
+参数名照抄 C# 源码的拼写：**`divice_info`、`channal`**（就是这两个错的拼法）。
+
+工具：`list_private_messages`（读）、`send_private_message`（发）。
+
+**读的时候注意**：对方发来的消息在 `markdown` 字段，自己发的在 `text` 字段；
+`is_user=1` 是「我发的」，但系统提示（「我们已经是好友啦」）也是 1，要靠文案认。
+
+### 两套签名别搞混
+
+| 文件 | 用在哪 | 特征 |
+|---|---|---|
+| `app_sign.py` 的 `hkeyencode` | 私信 `/chat/` | 7 位；HMAC-SHA1 变体 + GF(2^8) |
+| `app_sign_native.py` 的 `native_hkey` | 登录、签到 `/account/` `/task/` | 8 位大写十六进制；HMAC-SHA512 + 自定义 CRC32 |
+
+完整来龙去脉（含所有失败组合的对照表）在 mnemon 文档 `b4e9317d-ca0c-4da5-8571-d56bc42a7635`。
 
 ---
 

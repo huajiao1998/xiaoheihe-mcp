@@ -268,6 +268,33 @@ def create_server(*, port=8001):
             raise ValueError("分页参数无效。")
         return await call("following", peer=userId, limit=limit, offset=offset)
 
+    @server.tool(name="send_private_message")
+    async def send_private_message(userId: str, text: str) -> dict:
+        """给某人发小黑盒私信。
+
+        走 App 通道，用的是 app-session.json 里的 App 凭据（不是网页 cookie）。
+        没有凭据或过期了就跑 `xiaoheihe-cli app-login` 用手机号验证码登录一次。
+        注意：发帖/评论/关注走的是另一套（网页 cookie），两者不能互换。
+        """
+        if not str(userId).strip().isdigit():
+            raise ValueError("userId 必须是数字 uid。")
+        if not str(text or "").strip():
+            raise ValueError("text 不能为空。")
+        return await call("send_private_message", peer=userId, text=text)
+
+    @server.tool(name="list_private_messages", annotations=readonly)
+    async def list_private_messages(userId: str, limit: int = 20) -> dict:
+        """读和某人的小黑盒私信会话（对方 uid）。
+
+        走 App 通道（需要 app-session.json 里的 App 凭据）。只读，发用 send_private_message。
+        对方发来的消息在 markdown 字段，自己发的在 text 字段，工具已合并处理。
+        """
+        if not str(userId).strip().isdigit():
+            raise ValueError("userId 必须是数字 uid。")
+        if not 1 <= limit <= 100:
+            raise ValueError("分页参数无效。")
+        return await call("private_messages", peer=userId, limit=limit)
+
     @server.tool(name="list_followers", annotations=readonly)
     async def list_followers(userId: str | None = None, limit: int = 20, offset: int = 0) -> dict:
         """谁关注了我；传 userId 就查那个人的粉丝。"""

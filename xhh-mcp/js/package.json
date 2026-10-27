@@ -1,0 +1,10 @@
+{
+  "name": "xhh-device-token",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "跑官方 fp.min.js 换设备令牌，供 Python 调用",
+  "dependencies": {
+    "jsdom": "^27.0.1"
+  }
+}

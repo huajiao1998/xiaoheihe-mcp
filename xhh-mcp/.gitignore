@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# jsdom 有 25M，别进仓库，install.sh 会装
+js/node_modules/
+js/package-lock.json

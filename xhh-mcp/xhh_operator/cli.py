@@ -83,6 +83,14 @@ def parser():
     login.add_argument("--channel", choices=(*CHANNELS, "chromium"), help="Chrome/Edge 的安装通道")
     login.add_argument("--executable-path", type=Path, help="自定义浏览器可执行文件")
     login.add_argument("--driver-path", type=Path, help="系统 Firefox 或 Safari 的 WebDriver 路径")
+    applogin = sub.add_parser(
+        "app-login",
+        help="App 端手机号验证码登录（私信/签到要它，发帖评论仍用网页 cookie）",
+        description="小黑盒私信和签到要 App 凭据；发帖/评论/关注仍走网页 cookie，两者不能互换。")
+    applogin.add_argument("--phone", help="手机号，国内直接 11 位")
+    applogin.add_argument("--code", help="验证码；不给就交互输入")
+    applogin.add_argument("--send-only", action="store_true", help="只发验证码")
+
     sub.add_parser("browsers", help="查看支持的浏览器和本机可用状态")
     doctor = sub.add_parser("doctor", help="本地诊断，默认不读取会话内容")
     doctor.add_argument("--verify-login", action="store_true", help="显式校验已保存的登录态")
@@ -236,6 +244,17 @@ async def run(args):
                 driver_path=args.driver_path,
             )
         return await login_qr(store, timeout=args.timeout, qr_file=args.qr_file)
+    if args.command == "app-login":
+        from .app_login import main as app_login_main
+        argv = []
+        if args.phone:
+            argv += ["--phone", args.phone]
+        if args.code:
+            argv += ["--code", args.code]
+        if args.send_only:
+            argv.append("--send-only")
+        return app_login_main(argv)
+
     if args.command == "browsers":
         from playwright.async_api import async_playwright
 
