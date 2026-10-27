@@ -191,7 +191,12 @@ def create_server(*, port=8001):
     async def search_content(
         keyword: str, kind: str = "post", limit: int = 20, offset: int = 0
     ) -> dict:
-        """搜索帖子、游戏、用户或话题（kind=post|user|topic|game），返回一行一条的中文列表。"""
+        """搜索帖子、游戏、用户或话题（kind=post|user|topic|game），返回一行一条的中文列表。
+
+        搜用户请用**数字 ID**，别用昵称：平台页面自己写着「目前仅支持搜索发布投稿作者、用户数字ID」，
+        搜昵称会搜出一堆同名的陌生人。查某人发过什么帖子，直接用 user_posts(userId=...) 更准。
+        搜帖子是按标题/正文关键词匹配，不含作者名；新帖可能还没进索引，搜不到是平台侧的事。
+        """
         if not 1 <= limit <= 100 or offset < 0:
             raise ValueError("分页参数无效。")
         return await call("search", keyword, kind=kind, limit=limit, offset=offset)
