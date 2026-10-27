@@ -15,7 +15,14 @@ from .signing import workshop_params
 
 import html as _html
 
-_AT_RE = re.compile(r'<a[^>]*data-user-id="(\d+)"[^>]*>([^<]*)</a>')
+# @ 的两种写法都要认：
+#   网页正文：<a href="..." data-user-id="123">名字</a>
+#   App/markdown：<at userid="123">名字</at>
+# 只认一种的话，另一种会被下面的 _TAG_RE 剥成纯文本，uid 就丢了。
+_AT_PATTERNS = (
+    re.compile(r'<a[^>]*data-user-id="(\d+)"[^>]*>([^<]*)</a>'),
+    re.compile(r'<at\s+[^>]*userid="(\d+)"[^>]*>([^<]*)</at>', re.I),
+)
 _TAG_RE = re.compile(r'<[^>]+>')
 
 
@@ -28,7 +35,8 @@ def clean_rich_text(value):
         name = _html.unescape(m.group(2)).strip().lstrip("@").strip()
         return "@%s（uid:%s）" % (name, m.group(1))
 
-    value = _AT_RE.sub(_at, value)
+    for pattern in _AT_PATTERNS:
+        value = pattern.sub(_at, value)
     value = _TAG_RE.sub("", value)
     return _html.unescape(value).strip()
 
@@ -378,7 +386,7 @@ class Operator:
             "未读": unread,
             "条数": len(lines),
             "消息": lines,
-            "说明": "official 里 entry=message 的是私信（能看到内容，回不了——网页 API 没有发送接口）；sub_entry=heychat 的是好友申请。",
+            "说明": "official 里 entry=message 的是私信提醒（真正收发用 list_private_messages / send_private_message）；sub_entry=heychat 的是好友申请。",
         }
 
     async def games(self, *, offset=0, limit=20, query=""):
@@ -467,7 +475,7 @@ class Operator:
         else:
             lines = []
             for item in items:
-                text = (item.get("text") or "").strip()
+                text = clean_rich_text(item.get("text") or "").strip()
                 head = "｜".join(
                     p
                     for p in (
@@ -1529,7 +1537,7 @@ class Operator:
                 stamp = __import__("datetime").datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M")
             except Exception:
                 stamp = "?"
-            body = str(m.get("markdown") or m.get("text") or "").replace("\n", " ").strip()
+            body = clean_rich_text(str(m.get("markdown") or m.get("text") or "")).replace("\n", " ").strip()
             # is_user: 1 = 我发的，0 = 对方发的。
             # 平台把「加好友 / 互关」这类提示也算成 1，靠文案认出来标成系统。
             if any(h in body for h in ("已经是好友", "已互相关注", "开始聊天吧", "以上是打招呼")):
