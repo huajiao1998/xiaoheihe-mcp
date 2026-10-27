@@ -57,9 +57,30 @@ def _call(path, session, timeout=25):
         return json.loads(resp.read().decode())
 
 
-def query_state(session=None):
-    session = session or load_session()
-    return _call("/task/sign_v4/get_sign_state", session)
+def query_state(_session=None):
+    """查今天签没签。
+
+    走 `/task/list_v2/`（**网页 cookie + 网页签名**）——这个接口才真正反映任务状态。
+    踩过的坑：`/task/sign_v4/get_sign_state` 名字像查状态，实际今天已签过再调会回
+    「非法请求」，看着像签名坏了，其实只是重复签到被拒。别再拿它当状态查询用。
+    """
+    import asyncio
+    from .service import Operator
+
+    async def _run():
+        async with Operator() as op:
+            return await op.api.request("/task/list_v2/")
+
+    data = asyncio.run(_run())
+    if str(data.get("status")) != "ok":
+        raise RuntimeError(data.get("msg") or "查任务列表失败（网页登录态可能过期）")
+    for group in (data.get("result") or {}).get("task_list") or []:
+        if group.get("title") != "每日任务":
+            continue
+        for task in group.get("tasks") or []:
+            if task.get("title") == "签到":
+                return {"signed": str(task.get("state")) == "finish", "task": task}
+    return {"signed": False, "task": None}
 
 
 def do_sign(session=None):
@@ -81,18 +102,17 @@ def main(argv=None):
 
     print("账号 %s" % session["heybox_id"])
     try:
-        state = query_state(session)
+        state = query_state()
     except Exception as exc:                       # noqa: BLE001
         print("✗ 查签到状态失败：%s" % exc, file=sys.stderr)
         return 1
 
-    res = state.get("result") or {}
-    signed = res.get("state") == 1 or res.get("signed")
-    print("当前状态：%s" % ("今天已签到" if signed else "今天还没签"))
+    signed = state["signed"]
+    print("当前状态：%s" % ("今天已签到 ✅" if signed else "今天还没签"))
 
     if args.status:
-        if res:
-            print("  明细：%s" % json.dumps(res, ensure_ascii=False)[:200])
+        if state.get("task"):
+            print("  任务：%s" % json.dumps(state["task"], ensure_ascii=False)[:200])
         return 0
 
     if signed:
