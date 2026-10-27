@@ -126,17 +126,36 @@ def plain_text(value):
 
 
 def locate_comment(thread, target):
+    """按正文找一条评论。
+
+    先精确匹配；不行再退到包含匹配——消息中心（list_messages）给的正文是**截断过的**
+    （末尾带「…」），拿它直接来定位必然对不上，以前只能让调用方自己先查一遍帖子详情。
+    包含匹配只在**唯一命中**时才采用，多命中照样报错，不会乱回错人。
+    """
     target = plain_text(target)
     if not target:
         raise ValueError("目标评论正文不能为空。")
-    matches = []
+    # 消息中心截断时会在末尾留省略号，比之前先去掉，免得整串永远匹配不上。
+    cores = {target}
+    stripped = target.rstrip("…...").strip()
+    if stripped:
+        cores.add(stripped)
+
+    exact, fuzzy = [], []
     for group in (thread.get("result") or {}).get("comments") or []:
         items = group.get("comment") or []
         for item in items:
-            if plain_text(str(item.get("text") or "")) == target:
-                matches.append(
-                    {"reply_id": str(item["commentid"]), "root_id": str(items[0]["commentid"])}
-                )
+            text = plain_text(str(item.get("text") or ""))
+            entry = {
+                "reply_id": str(item["commentid"]),
+                "root_id": str(items[0]["commentid"]),
+            }
+            if text in cores:
+                exact.append(entry)
+            elif any(core and (core in text or text in core) for core in cores):
+                fuzzy.append(entry)
+
+    matches = exact or fuzzy
     if len(matches) != 1:
         raise OperatorError(
             "目标评论不存在或正文重复；请使用明确的 reply-id 和 root-id。", "target"
