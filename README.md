@@ -5,8 +5,9 @@
 代码就活在这个目录里，通过 editable 方式装进 uv tool 环境——site-packages 里只有
 两个 `__editable__*.pth` 文件指向这里，没有代码副本。改这里的文件、重启 MCP 就生效。
 
-底层来自 [AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli) v0.1.0（MIT），
-在上面改了六处、补了四个工具。原包不再跟进升级——我们这版就是最新的。
+最早参考过 [AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)（MIT），
+但**现在已经跟它相去甚远**——30 个工具、App 手机号登录、两套签名算法的纯 Python 实现、
+签到、私信，都是后来自己写出来的。它不是「改了几处的那个包」，是我们的东西。
 
 ---
 
@@ -299,3 +300,20 @@ MCP 入口：`xiaoheihe-cli mcp`（命令在 `/root/.local/bin/`）。
 ---
 
 MIT License · 原项目版权归 Li Fangyu
+
+---
+
+## 来源与致谢
+
+这个工具不是从零写的。做法是**取长补短**——四处看别人怎么解，回来自己实现，接口和算法对着实测对拍。
+
+- **[AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)**（MIT）：最早参考它的网页端接口和命令行骨架。
+  到今天已经**相去甚远**——30 个工具、App 手机号登录、两套签名算法、签到、私信都是后来自行实现的，
+  它现在更像一个起点，而不是底座。
+- **[chr233/Xiaoheihe_CSharp](https://github.com/chr233/Xiaoheihe_CSharp)**：`/chat/` 私信那套 hkey 签名（7 位）
+  是照它的 C# 实现翻成 Python 的。私信能打通，靠的就是这一份。
+- **[Cansiny0320/heybox-daily](https://github.com/Cansiny0320/heybox-daily)**：`/task/` 签到用的 native 签名
+  （8 位大写十六进制 + `_rnd`，含魔改 SHA-512）参考了它的实现。
+
+三个项目各自的思路不一样，拼起来才凑齐小黑盒这套接口的全貌：
+网页端、私信通道、签到通道本来就是三个不同的后端。
