@@ -146,6 +146,12 @@ def locate_comment(thread, target):
         items = group.get("comment") or []
         for item in items:
             text = plain_text(str(item.get("text") or ""))
+            # [本地补丁 2026-10-28] 空正文的评论（纯图片、被折叠、已删除）不能让。
+            # 下面那句 `text in core`，当 text 是空串时恒为 True——一条空评论就等于
+            # 「任何目标都命中一次」，于是 matches 永远 ≥2，按正文定位整条路废掉。
+            # 表现是「目标评论不存在或正文重复」，其实目标好好在那儿。
+            if not text:
+                continue
             entry = {
                 "reply_id": str(item["commentid"]),
                 "root_id": str(items[0]["commentid"]),
@@ -158,6 +164,8 @@ def locate_comment(thread, target):
     matches = exact or fuzzy
     if len(matches) != 1:
         raise OperatorError(
-            "目标评论不存在或正文重复；请使用明确的 reply-id 和 root-id。", "target"
+            "目标评论不存在或正文重复；请使用明确的 reply-id 和 root-id。"
+            f"（精确命中 {len(exact)} 条、模糊命中 {len(fuzzy)} 条）",
+            "target",
         )
     return matches[0]
