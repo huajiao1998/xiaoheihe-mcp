@@ -327,6 +327,34 @@ def create_server(*, port=8001):
             mode=mode,
         )
 
+    @server.tool(name="edit_content", annotations=writing)
+    async def edit_content(
+        postId: str,
+        title: str,
+        content: str,
+        images: list[str] | None = None,
+        communities: list[str] | None = None,
+        tags: list[str] | None = None,
+        mode: str = "preview",
+    ) -> dict:
+        """改已发过的图文帖（标题/正文/配图/分区都能换）：mode=preview 只预览（默认）/ draft 存草稿 / publish 正式改。
+
+        postId 是帖子 id（详情里的 id）。
+        **不传的就是沿用原帖**：communities 不传沿用原分区、images 不传保留原配图、
+        original/view_limit/post_type/link_tag 全部原样写回——只改标题不会把配图或原创标记弄丢。
+        图片是本地绝对路径，**传几张就整个换成几张**（不是追加）。
+        """
+        return await call(
+            "post_publish",
+            title,
+            content,
+            images=images or [],
+            communities=communities or [],
+            tags=tags or [],
+            mode=mode,
+            postid=postId,
+        )
+
     @server.tool(name="publish_article", annotations=writing)
     async def publish_article(
         title: str,

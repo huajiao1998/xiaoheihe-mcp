@@ -101,6 +101,7 @@ xiaoheihe-cli app-login --code 1234            # 仅提交验证码
 |---|---|
 | 发图文帖 | `publish_content` |
 | 发长文（支持 Markdown / HTML / 本地图片） | `publish_article` |
+| **改已发布的图文帖**（标题/正文/配图/分区） | `edit_content` |
 | 发视频与封面 | `publish_video` |
 | 发评论 | `post_comment` |
 | 回复评论 | `reply_comment` |

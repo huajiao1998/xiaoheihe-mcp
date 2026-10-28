@@ -922,6 +922,63 @@ class Operator:
             "/bbs/app/link/edit/info", params={"link_id": identifier(postid)}
         )
 
+    async def original_selection(self, postid):
+        """读原帖的分区和话题，编辑时用来沿用。返回 (community_names, hashtag_names)。"""
+        meta = await self.original_meta(postid)
+        return meta["communities"], meta["hashtags"]
+
+    async def original_meta(self, postid):
+        """读原帖的全部可继承元数据：分区、话题、正文里的图、原创/可见范围/帖子类型/分类。
+
+        编辑时必须整份沿用——表单是**整份覆盖**，没写回去的字段会被默认值顶掉
+        （比如不传图，原图就没了；original 默认 1，会把转载帖改成原创）。
+        """
+        info = await self.edit_info(postid)
+        link = ((info or {}).get("result") or {}).get("link") or {}
+
+        communities = tuple(
+            t.get("name")
+            for t in (link.get("topics") or [])
+            if isinstance(t, dict) and t.get("name")
+        )
+        hashtags = tuple(
+            h.get("name") if isinstance(h, dict) else h
+            for h in (link.get("hashtags") or [])
+            if (h.get("name") if isinstance(h, dict) else h)
+        )
+
+        # 图片在正文块里（link.imgs 常为空），按顺序收集 img 节点
+        images = []
+        try:
+            blocks = json.loads(link.get("text") or "[]")
+        except (TypeError, ValueError):
+            blocks = []
+        for block in blocks if isinstance(blocks, list) else []:
+            if isinstance(block, dict) and block.get("type") == "img" and block.get("url"):
+                images.append(
+                    {
+                        "url": block["url"],
+                        "width": block.get("width"),
+                        "height": block.get("height"),
+                    }
+                )
+
+        original_info = link.get("original_info") or {}
+        original = original_info.get("original")
+        if original is None:
+            original = link.get("original")
+
+        return {
+            "communities": communities,
+            "hashtags": hashtags,
+            "images": images,
+            "link_tag": link.get("link_tag"),
+            "post_type": link.get("post_type"),
+            "view_limit": link.get("view_limit"),
+            "original": original,
+            "disable_comment": link.get("disable_comment"),
+        }
+
     def uploader(self):
         from .media import MediaUploader
 
@@ -987,6 +1044,7 @@ class Operator:
         hashtags=(),
         post_kind="article",
         base_dir=None,
+        original=None,
     ):
         from .article import prepare_article
         from .media import inspect_image
@@ -1009,6 +1067,11 @@ class Operator:
         if postid:
             postid = identifier(postid)
             await self.require_own_post(postid)
+            if original is None:
+                original = await self.original_meta(postid)
+            # 编辑时没传分区/话题 → 沿用原帖的，别把帖子挪出原来的区
+            communities = communities or original["communities"]
+            hashtags = hashtags or original["hashtags"]
         selection = await resolve_selections(self.api, communities, hashtags)
         if post_kind == "image_text" and not selection["topic_ids"]:
             selection["topic_ids"] = "58144"
@@ -1024,6 +1087,12 @@ class Operator:
             blocks = ([{"type": "text", "text": content}] if content else []) + [
                 {"type": "img", "url": url, "width": item.width, "height": item.height}
                 for item, url in zip(media, urls)
+            ]
+        if original is not None and not media:
+            # 没给新图 → 原样保留原帖的图，别让一次改标题把配图清空
+            blocks += [
+                {"type": "img", "url": img["url"], "width": img["width"], "height": img["height"]}
+                for img in original["images"]
             ]
         form = {
             "title": title,
@@ -1045,6 +1114,12 @@ class Operator:
             form["hashtags"] = json.dumps(selection["hashtags"], ensure_ascii=False)
         if postid:
             form.update({"edit": "1", "link_id": postid})
+            # 元数据沿用原帖：表单整份覆盖，不写回去就会被默认值顶掉
+            if original is not None:
+                for key in ("link_tag", "post_type", "view_limit", "original"):
+                    value = original.get(key)
+                    if value is not None:
+                        form[key] = str(value)
         if dry_run:
             result = {
                 "dry_run": True,
@@ -1068,13 +1143,29 @@ class Operator:
         )
 
     async def post_publish(
-        self, title, content, *, images=(), communities=(), tags=(), mode="preview", kind="image_text"
+        self,
+        title,
+        content,
+        *,
+        images=(),
+        communities=(),
+        tags=(),
+        mode="preview",
+        kind="image_text",
+        postid=None,
     ):
-        """发图文或长文的简化入口：mode=preview/draft/publish，返回人话结果。"""
+        """发图文或长文的简化入口：mode=preview/draft/publish，返回人话结果。
+
+        传了 postid 就是**编辑已有帖子**（小黑盒 creator 编辑器同一套表单，edit=1）。
+        """
         if mode not in ("preview", "draft", "publish"):
             raise ValueError("mode 只能是 preview / draft / publish。")
         dry_run = mode == "preview"
         draft = mode != "publish"
+        original = await self.original_meta(postid) if postid else None
+        if postid and not communities:
+            communities = original["communities"]
+        new_image_count = len(list(images or ()))
         result = await self.write_post(
             title,
             content,
@@ -1084,14 +1175,28 @@ class Operator:
             hashtags=list(tags or ()),
             draft=draft,
             dry_run=dry_run,
+            postid=postid,
+            original=original,
         )
         zone = "、".join(communities or ()) or ""
+        if original is not None:
+            kept = len(original["images"])
+            pictures = (
+                "换成 %d 张" % new_image_count
+                if new_image_count
+                else ("沿用原有 %d 张" % kept if kept else "无")
+            )
+        else:
+            pictures = "%d 张" % new_image_count
         base = {
+            "操作": "编辑帖子" if postid else "发新帖",
             "分区": zone or "（未指定）",
             "标题": title,
             "正文": "%d 字" % len(content or ""),
-            "图片": "%d 张" % len(list(images or ())),
+            "图片": pictures,
         }
+        if postid:
+            base["帖子 ID"] = str(postid)
         if dry_run:
             base["模式"] = "预览（不会真发）"
             base["下一步"] = "确认后传 mode=draft 存草稿，或 mode=publish 正式发布"
@@ -1100,7 +1205,8 @@ class Operator:
             return base
         link_id = result.get("link_id") if isinstance(result, dict) else None
         link = (((result.get("readback") or {}).get("result") or {}).get("link") or {})
-        base["结果"] = "已存草稿" if result.get("is_draft") else "已发布"
+        edit = bool(postid)
+        base["结果"] = "已存草稿" if result.get("is_draft") else ("已修改" if edit else "已发布")
         base["id"] = str(link_id or link.get("linkid") or "")
         base["链接"] = link.get("share_url") or ""
         return base
